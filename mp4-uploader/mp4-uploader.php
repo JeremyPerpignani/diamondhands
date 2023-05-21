@@ -2,45 +2,90 @@
 /*
 Plugin Name: MP4 Uploader
 Description: Custom plugin for uploading MP4 videos.
-Version: 1.0
+Version: 1.1
 Author: Jeremy Perpignani
 Author URI: https:diamondhands.org
 */
 
-// Enqueue scripts and styles
-function mp4_uploader_enqueue_scripts() {
-    wp_enqueue_script('mp4-uploader-script', plugin_dir_url(__FILE__) . 'js/mp4-uploader.js', array('jquery'), '1.0', true);
-}
-add_action('wp_enqueue_scripts', 'mp4_uploader_enqueue_scripts');
-
-// Add custom meta box to the post editor
-function mp4_uploader_add_meta_box() {
-    add_meta_box('mp4-uploader-meta-box', 'MP4 Video', 'mp4_uploader_render_meta_box', 'post', 'normal', 'high');
-}
-add_action('add_meta_boxes', 'mp4_uploader_add_meta_box');
-
-// Render the custom meta box
-function mp4_uploader_render_meta_box($post) {
-    wp_nonce_field('mp4_uploader_meta_box', 'mp4_uploader_meta_box_nonce');
-    $value = get_post_meta($post->ID, 'mp4_video', true);
+// MP4 Uploader Form Shortcode
+function mp4_uploader_form_shortcode() {
+    ob_start();
     ?>
-    <input type="text" id="mp4_video" name="mp4_video" value="<?php echo esc_attr($value); ?>" style="width:100%;" placeholder="Enter MP4 video URL">
+    <form method="post" enctype="multipart/form-data">
+        <input type="file" name="mp4_file" accept="video/mp4">
+        <input type="submit" name="upload_mp4" value="Upload MP4">
+    </form>
     <?php
+    return ob_get_clean();
 }
+add_shortcode('mp4_uploader_form', 'mp4_uploader_form_shortcode');
 
-// Save the custom meta box value
-function mp4_uploader_save_meta_box($post_id) {
-    if (!isset($_POST['mp4_uploader_meta_box_nonce']) || !wp_verify_nonce($_POST['mp4_uploader_meta_box_nonce'], 'mp4_uploader_meta_box')) {
-        return;
+// MP4 Gallery Shortcode
+function mp4_gallery_shortcode($atts) {
+    ob_start();
+
+    $query_args = array(
+        'post_type' => 'attachment',
+        'post_mime_type' => 'video/mp4',
+        'posts_per_page' => -1,
+        'post_status' => 'inherit',
+        'meta_query' => array(
+            array(
+                'key' => 'mp4_uploaded',
+                'value' => 'yes',
+            ),
+        ),
+    );
+
+    $query = new WP_Query($query_args);
+
+    if ($query->have_posts()) {
+        echo '<div class="mp4-gallery">';
+        while ($query->have_posts()) {
+            $query->the_post();
+            $mp4_url = wp_get_attachment_url(get_the_ID());
+            echo '<video src="' . esc_url($mp4_url) . '" controls></video>';
+        }
+        echo '</div>';
+    } else {
+        echo 'No MP4 videos found.';
     }
-    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
-        return;
-    }
-    if (!current_user_can('edit_post', $post_id)) {
-        return;
-    }
-    if (isset($_POST['mp4_video'])) {
-        update_post_meta($post_id, 'mp4_video', sanitize_text_field($_POST['mp4_video']));
+
+    wp_reset_postdata();
+
+    return ob_get_clean();
+}
+add_shortcode('mp4_gallery', 'mp4_gallery_shortcode');
+
+// Handle MP4 Upload
+function handle_mp4_upload() {
+    if (isset($_POST['upload_mp4'])) {
+        $file = $_FILES['mp4_file'];
+
+        $file_name = $file['name'];
+        $file_tmp = $file['tmp_name'];
+
+        $upload_dir = wp_upload_dir();
+        $target_dir = $upload_dir['path'];
+        $target_file = $target_dir . '/' . $file_name;
+
+        $upload_result = move_uploaded_file($file_tmp, $target_file);
+
+        if ($upload_result) {
+            $attachment = array(
+                'guid' => $upload_dir['url'] . '/' . $file_name,
+                'post_mime_type' => 'video/mp4',
+                'post_title' => $file_name,
+                'post_content' => '',
+                'post_status' => 'inherit',
+            );
+
+            $attachment_id = wp_insert_attachment($attachment, $target_file);
+
+            if (!is_wp_error($attachment_id)) {
+                update_post_meta($attachment_id, 'mp4_uploaded', 'yes');
+            }
+        }
     }
 }
-add_action('save_post', 'mp4_uploader_save_meta_box');
+add_action('init', 'handle_mp4_upload');
