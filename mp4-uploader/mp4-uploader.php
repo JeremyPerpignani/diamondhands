@@ -2,7 +2,7 @@
 /*
 Plugin Name: MP4 Uploader
 Description: Custom plugin for uploading MP4 videos.
-Version: 1.1
+Version: 1.2
 Author: Jeremy Perpignani
 Author URI: https:diamondhands.org
 */
@@ -24,6 +24,17 @@ add_shortcode('mp4_uploader_form', 'mp4_uploader_form_shortcode');
 function mp4_gallery_shortcode($atts) {
     ob_start();
 
+    $default_width = get_option('mp4_default_width', '');
+    $default_height = get_option('mp4_default_height', '');
+
+    $gallery_atts = shortcode_atts(
+        array(
+            'width' => $default_width,
+            'height' => $default_height,
+        ),
+        $atts
+    );
+
     $query_args = array(
         'post_type' => 'attachment',
         'post_mime_type' => 'video/mp4',
@@ -44,7 +55,7 @@ function mp4_gallery_shortcode($atts) {
         while ($query->have_posts()) {
             $query->the_post();
             $mp4_url = wp_get_attachment_url(get_the_ID());
-            echo '<video src="' . esc_url($mp4_url) . '" controls></video>';
+            echo '<video src="' . esc_url($mp4_url) . '" width="' . esc_attr($gallery_atts['width']) . '" height="' . esc_attr($gallery_atts['height']) . '" controls></video>';
         }
         echo '</div>';
     } else {
@@ -89,3 +100,42 @@ function handle_mp4_upload() {
     }
 }
 add_action('init', 'handle_mp4_upload');
+
+// Add the settings page
+function mp4_settings_page() {
+    add_options_page('MP4 Uploader Settings', 'MP4 Uploader Settings', 'manage_options', 'mp4-uploader-settings', 'mp4_render_settings_page');
+}
+add_action('admin_menu', 'mp4_settings_page');
+
+// Render the settings page
+function mp4_render_settings_page() {
+    ?>
+    <div class="wrap">
+        <h1>MP4 Uploader Settings</h1>
+        <form method="post" action="options.php">
+            <?php
+            settings_fields('mp4_settings');
+            do_settings_sections('mp4_settings');
+            ?>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">Default Video Width</th>
+                    <td><input type="number" name="mp4_default_width" value="<?php echo esc_attr(get_option('mp4_default_width')); ?>" /></td>
+                </tr>
+                <tr>
+                    <th scope="row">Default Video Height</th>
+                    <td><input type="number" name="mp4_default_height" value="<?php echo esc_attr(get_option('mp4_default_height')); ?>" /></td>
+                </tr>
+            </table>
+            <?php submit_button(); ?>
+        </form>
+    </div>
+    <?php
+}
+
+// Register the settings
+function mp4_register_settings() {
+    register_setting('mp4_settings', 'mp4_default_width');
+    register_setting('mp4_settings', 'mp4_default_height');
+}
+add_action('admin_init', 'mp4_register_settings');
